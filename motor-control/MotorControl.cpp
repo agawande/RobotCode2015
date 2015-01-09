@@ -109,3 +109,26 @@ void MotorControl::halt()
   analogWrite(_ENB, 0);
  }
 }
+
+void MotorControl::driveRight()
+{
+ digitalWrite(_IN1, HIGH);     // Sets motor to run forward
+ digitalWrite(_IN2, LOW);     // Sets motor to run forward
+ analogWrite(_ENA, 255);      // Turns the motor on and sets speed to 255
+ 
+ digitalWrite(_IN3, LOW);     // Sets motor to run forward
+ digitalWrite(_IN4, HIGH);     // Sets motor to run forward
+ analogWrite(_ENB, 255);      // Turns the motor on and sets speed to 255
+}
+
+void MotorControl::driveLeft()
+{
+ digitalWrite(_IN1, LOW);     // Sets motor to run forward
+ digitalWrite(_IN2, HIGH);     // Sets motor to run forward
+ analogWrite(_ENA, 255);      // Turns the motor on and sets speed to 255
+ 
+ digitalWrite(_IN3, HIGH);     // Sets motor to run forward
+ digitalWrite(_IN4, LOW);     // Sets motor to run forward
+ analogWrite(_ENB, 255);      // Turns the motor on and sets speed to 255
+}
+

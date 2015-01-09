@@ -40,8 +40,15 @@ void loop()
     else if(inputString == "h")
     {
       robotMotor.halt();
+    }    
+    else if(inputString == "r")
+    {
+      robotMotor.driveRight();
     }
-    
+    else if(inputString == "l")
+    {
+      robotMotor.driveLeft();
+    }
     // clear the string:
     inputString = "";
     stringComplete = false;
@@ -58,7 +65,7 @@ void serialEvent() {
     // if the incoming character is a newline, set a flag
     // so the main loop can do something about it
     // f = accelerate and forward, b = accelerate and backward, s = decelarate to stop, h=halt
-    if (inChar == 'f' || inChar == 'b' || inChar == 's' || inChar == 'h') {
+    if (inChar == 'f' || inChar == 'b' || inChar == 's' || inChar == 'h' || inChar == 'l' || inChar =='r') {
       stringComplete = true;
     } 
   }

@@ -12,7 +12,9 @@ class MotorControl
 	void driveForward();
 	void driveBack();
 	void slowStop();
-	void halt();
+	void halt();	
+        void driveLeft();
+        void driveRight();
         //void drive(int degrees, float theta);
         //void stop (bool isHardStop)
 	
