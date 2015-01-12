@@ -12,6 +12,18 @@
 volatile long _LeftEncoderTicks = 0;
 volatile long _RightEncoderTicks = 0;
 
+volatile int leftPulseCount = 0;
+volatile int rightPulseCount = 0;
+
+volatile leftPulseRate = 0;
+volatile rightPulseRate = 0;
+
+volatile leftTempCount = 0;
+volatile rightTempCount = 0;
+
+volatile leftLastMicros = 0;
+volatile rightLastMicros = 0;
+
 void setup()
 {
 	Serial.begin(9600);
@@ -44,12 +56,30 @@ void loop()
 
 // Interrupt service routines for the left motor's quadrature encoder
 void HandleLeftMotorInterrupt(){
-	// Test transition;
+	
 	_LeftEncoderTicks++;
+	leftPulseCount++;
+	leftTempCount++;
+	
+	if leftPulseCount == 4) {
+		leftPulseRate = leftTempCount / (micros() - leftLastMicros);		// leftPulseRate is speed in ticks per microsecond.
+		leftPulseCount = 0;
+		leftTempCount = 0;
+		LeftLastMicros = micros();
+	}
 }
 
 // Interrupt service routines for the right motor's quadrature encoder
 void HandleRightMotorInterrupt(){
-	// Test transition;
+	
 	_RightEncoderTicks++;
+	rightPulseCount++;
+	rightTempCount++;
+	
+	if rightPulseCount == 4) {
+		rightPulseRate = rightTempCount / (micros() - rightLastMicros);		// leftPulseRate is speed in ticks per microsecond.
+		rightPulseCount = 0;
+		rightTempCount = 0;
+		rightLastMicros = micros();
+	}
 }
