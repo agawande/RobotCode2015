@@ -9,13 +9,16 @@ Created by Ashlesh, Dec 19, 2014
 
 Motor::Motor(int ENA, int IN1, int IN2)
 {
-	 pinMode(ENA, OUTPUT);
-	 pinMode(IN1, OUTPUT);
-	 pinMode(IN2, OUTPUT);
 	 
 	_ENA = ENA;
 	_IN1 = IN1;
 	_IN2 = IN2;
+
+        pinMode(_ENA, OUTPUT);
+	pinMode(_IN1, OUTPUT);
+	pinMode(_IN2, OUTPUT);
+
+        analogWrite(_ENA, 0);
 }
 
 void Motor::setForward()
@@ -55,10 +58,10 @@ void Motor::signedDrive(int amt) {
   // signedDrive handles directionality on its own and will set the direction of the motor according to the sign.
   // Old direction will be retained on speed of 0.
   
-  if (amt < 0) {
+  if (amt > 0) {
     this->setForward();
   } 
-  else if (amt > 0) {
+  else if (amt < 0) {
     this->setReverse();
     amt = -amt;
   }

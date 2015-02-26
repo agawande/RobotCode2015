@@ -11,6 +11,8 @@ const int ENB = 5;
 int lSpeed = 0;
 int rSpeed = 0;
 
+int delayTime = 5;
+
 // Setting up the MotorControl object with the proper pins.
 Motor rightMotor(ENA,IN1,IN2);
 Motor leftMotor(ENB,IN3,IN4);
@@ -30,6 +32,7 @@ void setup()
 
 void loop()
 {
+  
   // Parsing input.
   // Commands:
     // f = Accelerate, then drive forward.
@@ -73,29 +76,34 @@ void loop()
           }
           rightMotor.signedDrive(rSpeed);
           leftMotor.signedDrive(lSpeed);
+          delay(delayTime);
         } else {
           // Otherwise, bring them both up to full speed slowly.
           lSpeed++;
           rSpeed++;
           rightMotor.signedDrive(rSpeed);
           leftMotor.signedDrive(lSpeed);
+          delay(delayTime);
         }
       } 
     }
     
     else if(inputString == "s")
     {
+      int lTick;
+      int rTick;
+      
       // Reverse values get increased to 0, forward values get decreased to 0.
       if (lSpeed < 0) {
-        int lTick = 1;
+        lTick = 1;
       } else {
-        int lTick = -1;
+        lTick = -1;
       }
       
       if (rSpeed < 0) {
-        int rTick = 1;
+        rTick = 1;
       } else {
-        int rTick = -1;
+        rTick = -1;
       }
       
       while (lSpeed != 0 && rSpeed != 0) {
@@ -108,12 +116,14 @@ void loop()
           }
           rightMotor.signedDrive(rSpeed);
           leftMotor.signedDrive(lSpeed);
+          delay(delayTime);
         // Then bring them both to 0 slowly.
         } else {
           lSpeed += lTick;
           rSpeed += rTick;
           rightMotor.signedDrive(rSpeed);
           leftMotor.signedDrive(lSpeed);
+          delay(delayTime);
         }
       }   
     }
@@ -131,12 +141,14 @@ void loop()
           }
           rightMotor.signedDrive(rSpeed);
           leftMotor.signedDrive(lSpeed);
+          delay(delayTime);
         } else {
           // Otherwise, bring them both up to full speed slowly.
           lSpeed--;
           rSpeed--;
           rightMotor.signedDrive(rSpeed);
           leftMotor.signedDrive(lSpeed);
+          delay(delayTime);
         }
       } 
     }
