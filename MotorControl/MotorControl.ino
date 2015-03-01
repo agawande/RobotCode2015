@@ -1,4 +1,6 @@
 #include "Motor_Control.h"
+#include "PID_v1.h"
+#include <Encoder.h>
 
 // Pin Definitions
 const int IN1 = 0;
@@ -8,196 +10,170 @@ const int IN4 = 3;
 const int ENA = 4;
 const int ENB = 5;
 
-int lSpeed = 0;
-int rSpeed = 0;
-
-int delayTime = 5;
-
 // Setting up the MotorControl object with the proper pins.
 Motor rightMotor(ENA,IN1,IN2);
 Motor leftMotor(ENB,IN3,IN4);
 
-// String stuff for serial communications. This will eventually be phased out.
-// TODO: we don't really need a string using up 200 bytes of memory. If we're only using one character, we can conver this to a char to save resources.
-// TODO: determine a standard data type for commands maybe? The uCs will have to talk to eachother over I2C anyway, so it might be good to start in on this now.
-String inputString = "";         // Container for incoming data.
-boolean stringComplete = false;
+//----------------For-PID--------------------
+
+#define c_LeftEncoderPinA 7
+#define c_LeftEncoderPinB 8
+
+#define c_RightEncoderPinA 9
+#define c_RightEncoderPinB 10
+
+volatile bool _LeftEncoderASet;
+volatile bool _LeftEncoderBSet;
+volatile bool _LeftEncoderAPrev;
+volatile bool _LeftEncoderBPrev;
+volatile long _LeftEncoderTicks = 0;
+
+volatile bool _RightEncoderASet;
+volatile bool _RightEncoderBSet;
+volatile bool _RightEncoderAPrev;
+volatile bool _RightEncoderBPrev;
+volatile long _RightEncoderTicks = 0;
+
+//Define Variables we'll be connecting to
+double Setpoint, Input, Output;
+
+
+//Specify the links and initial tuning parameters
+PID myPID(&Input, &Output, &Setpoint,0.5,0.5,0.5, DIRECT);
+
+//------------------------------------PID------------------------------------------
 
 void setup()
 {
  Serial.begin(9600);
  Serial.println("Motor Test");     // Ready statement.
- inputString.reserve(200);
+ Setpoint = 0;
+ Input = _LeftEncoderTicks - _RightEncoderTicks;
+ //turn the PID on
+  myPID.SetMode(AUTOMATIC);
+  myPID.SetSampleTime(1);
+  
+  // Left encoder
+  pinMode(c_LeftEncoderPinA, INPUT);      // sets pin A as input
+  digitalWrite(c_LeftEncoderPinA, LOW);  // turn on pullup resistors
+  pinMode(c_LeftEncoderPinB, INPUT);      // sets pin B as input
+  digitalWrite(c_LeftEncoderPinB, LOW);  // turn on pullup resistors
+  attachInterrupt(c_LeftEncoderPinA, HandleLeftMotorInterruptA, CHANGE);
+  attachInterrupt(c_LeftEncoderPinB, HandleLeftMotorInterruptB, CHANGE);
+  
+  // Right encoder
+  pinMode(c_RightEncoderPinA, INPUT);      // sets pin A as input
+  digitalWrite(c_RightEncoderPinA, LOW);  // turn on pullup resistors
+  pinMode(c_RightEncoderPinB, INPUT);      // sets pin B as input
+  digitalWrite(c_RightEncoderPinB, LOW);  // turn on pullup resistors
+  attachInterrupt(c_RightEncoderPinA, HandleRightMotorInterruptA, CHANGE);
+  attachInterrupt(c_RightEncoderPinB, HandleRightMotorInterruptB, CHANGE);
+  
+  leftMotor.signedDrive(64);
+  
 }
+
+long positionLeft  = 0;
+long positionRight = 0;
 
 void loop()
-{
-  
-  // Parsing input.
-  // Commands:
-    // f = Accelerate, then drive forward.
-    // b = Accelerate, then drive backward. 
-    // s = slow stop
-    // h = halt/e-stop
-    // r = turn right
-    // l = turn left
-  
-  // Making sure the speeds set are not out of range for PWM.
-  if (lSpeed > 255) {
-    lSpeed = 255;
-  }
-  
-  if (lSpeed < -255) {
-    lSpeed = -255;
-  }
-  
-  if (rSpeed > 255) {
-    rSpeed = 255;
-  }
-  
-  if (rSpeed < -255) {
-    rSpeed = -255;
-  }
-    
-  // Begin Parsing
-  if (stringComplete) {
-    Serial.println(inputString); 
-    
-    if(inputString == "f")
-    {
-      while (lSpeed < 255 || rSpeed < 255) {
-        // Check to make sure the speeds are balanced.
-        if (lSpeed != rSpeed) {
-          // If not, balance them by accelerating the slower one.
-          if (lSpeed < rSpeed) {
-            lSpeed++;
-          } else {
-            rSpeed++;
-          }
-          rightMotor.signedDrive(rSpeed);
-          leftMotor.signedDrive(lSpeed);
-          delay(delayTime);
-        } else {
-          // Otherwise, bring them both up to full speed slowly.
-          lSpeed++;
-          rSpeed++;
-          rightMotor.signedDrive(rSpeed);
-          leftMotor.signedDrive(lSpeed);
-          delay(delayTime);
-        }
-      } 
-    }
-    
-    else if(inputString == "s")
-    {
-      int lTick;
-      int rTick;
+{  
+  if (_LeftEncoderTicks != _RightEncoderTicks) {
+    // If the right motor has moved
+        Input = _LeftEncoderTicks - _RightEncoderTicks;
+	myPID.Compute();
+        Serial.print("Output: ");
+        Serial.println((int) Output);
+        rightMotor.signedDrive((int) Output);
+	//rightMotor.analogDrive(Output);
+        /*Serial.print(" L Encoder Ticks: ");
+        Serial.print(_LeftEncoderTicks);
+        Serial.print("  L Revolutions: ");
+        Serial.print(_LeftEncoderTicks/8400.0);		// how to count: 64 counts/rev (PDR) * 131.25:1 (gear ratio) = 8400
       
-      // Reverse values get increased to 0, forward values get decreased to 0.
-      if (lSpeed < 0) {
-        lTick = 1;
-      } else {
-        lTick = -1;
-      }
-      
-      if (rSpeed < 0) {
-        rTick = 1;
-      } else {
-        rTick = -1;
-      }
-      
-      while (lSpeed != 0 && rSpeed != 0) {
-        // If their absolute speeds are not balanced, balance them first.
-        if (abs(lSpeed) != abs(rSpeed)) {
-          if (abs(lSpeed) > abs(rSpeed)) {
-            lSpeed += lTick;
-          } else {
-            rSpeed += rTick;
-          }
-          rightMotor.signedDrive(rSpeed);
-          leftMotor.signedDrive(lSpeed);
-          delay(delayTime);
-        // Then bring them both to 0 slowly.
-        } else {
-          lSpeed += lTick;
-          rSpeed += rTick;
-          rightMotor.signedDrive(rSpeed);
-          leftMotor.signedDrive(lSpeed);
-          delay(delayTime);
-        }
-      }   
-    }
-    
-    else if(inputString == "b")
-    {
-      while (lSpeed > -255 || rSpeed > -255) {
-        // Check to make sure the speeds are balanced.
-        if (lSpeed != rSpeed) {
-          // If not, balance them by accelerating the slower one.
-          if (lSpeed > rSpeed) {
-            lSpeed--;
-          } else {
-            rSpeed--;
-          }
-          rightMotor.signedDrive(rSpeed);
-          leftMotor.signedDrive(lSpeed);
-          delay(delayTime);
-        } else {
-          // Otherwise, bring them both up to full speed slowly.
-          lSpeed--;
-          rSpeed--;
-          rightMotor.signedDrive(rSpeed);
-          leftMotor.signedDrive(lSpeed);
-          delay(delayTime);
-        }
-      } 
-    }
-    
-    else if(inputString == "h")
-    {
-      leftMotor.halt();
-      rightMotor.halt();
-    } 
-    
-    else if(inputString == "r")
-    {
-      // To turn right in place, the robot turns the left motor backwards and the right motor forward.
-      // This is not done gently.
-      
-      lSpeed = -255;
-      rSpeed = 255;
-      rightMotor.signedDrive(rSpeed);
-      leftMotor.signedDrive(lSpeed);
-      
-    }
-    
-    else if(inputString == "l")
-    {
-      // To turn left in place, the robot turns the left motor forward and the right motor backwards.
-      // This is not done gently.
-      
-      lSpeed = 255;
-      rSpeed = -255;
-      rightMotor.signedDrive(rSpeed);
-      leftMotor.signedDrive(lSpeed);
-    }
-    
-    // clear the string:
-    inputString = "";
-    stringComplete = false;
+        Serial.print("  R Encoder Ticks: ");
+        Serial.print(_RightEncoderTicks);
+        Serial.print("  R Revolutions: ");
+        Serial.print(_RightEncoderTicks/8400.0);	// how to count: 64 counts/rev (PDR) * 131.25:1 (gear ratio) = 8400
+        Serial.print("\n");*/
   }
   
 }
 
-void serialEvent() {
-  while (Serial.available()) {
-    char inChar = (char)Serial.read();     // get the new byte
-    inputString += inChar;                 // add it to the inputString
-    
-    // if the incoming character is a newline, set a flag so the main loop can do something about it
-    // f = accelerate and forward, b = accelerate and backward, s = decelarate to stop, h=halt
-    if (inChar == 'f' || inChar == 'b' || inChar == 's' || inChar == 'h' || inChar == 'l' || inChar =='r') {
-      stringComplete = true;
-    }  
+// Interrupt service routines for the left motor's quadrature encoder
+void HandleLeftMotorInterruptA(){
+  _LeftEncoderBSet = digitalRead(c_LeftEncoderPinB);
+  _LeftEncoderASet = digitalRead(c_LeftEncoderPinA);
+  
+  _LeftEncoderTicks+=ParseLeftEncoder();
+  
+  _LeftEncoderAPrev = _LeftEncoderASet;
+  _LeftEncoderBPrev = _LeftEncoderBSet;
+}
+
+void HandleLeftMotorInterruptB(){
+  // Test transition;
+  _LeftEncoderBSet = digitalRead(c_LeftEncoderPinB);
+  _LeftEncoderASet = digitalRead(c_LeftEncoderPinA);
+  
+  _LeftEncoderTicks+=ParseLeftEncoder();
+  
+  _LeftEncoderAPrev = _LeftEncoderASet;
+  _LeftEncoderBPrev = _LeftEncoderBSet;
+}
+
+// Interrupt service routines for the Right motor's quadrature encoder
+void HandleRightMotorInterruptA(){
+  _RightEncoderBSet = digitalRead(c_RightEncoderPinB);
+  _RightEncoderASet = digitalRead(c_RightEncoderPinA);
+  
+  _RightEncoderTicks+=ParseRightEncoder();
+  
+  _RightEncoderAPrev = _RightEncoderASet;
+  _RightEncoderBPrev = _RightEncoderBSet;
+}
+
+void HandleRightMotorInterruptB(){
+  // Test transition;
+  _RightEncoderBSet = digitalRead(c_RightEncoderPinB);
+  _RightEncoderASet = digitalRead(c_RightEncoderPinA);
+  
+  _RightEncoderTicks+=ParseRightEncoder();
+  
+  _RightEncoderAPrev = _RightEncoderASet;
+  _RightEncoderBPrev = _RightEncoderBSet;
+}
+
+int ParseLeftEncoder(){
+  if(_LeftEncoderAPrev && _LeftEncoderBPrev){
+    if(!_LeftEncoderASet && _LeftEncoderBSet) return -1;
+    if(_LeftEncoderASet && !_LeftEncoderBSet) return 1;
+  }else if(!_LeftEncoderAPrev && _LeftEncoderBPrev){
+    if(!_LeftEncoderASet && !_LeftEncoderBSet) return -1;
+    if(_LeftEncoderASet && _LeftEncoderBSet) return 1;
+  }else if(!_LeftEncoderAPrev && !_LeftEncoderBPrev){
+    if(_LeftEncoderASet && !_LeftEncoderBSet) return -1;
+    if(!_LeftEncoderASet && _LeftEncoderBSet) return 1;
+  }else if(_LeftEncoderAPrev && !_LeftEncoderBPrev){
+    if(_LeftEncoderASet && _LeftEncoderBSet) return -1;
+    if(!_LeftEncoderASet && !_LeftEncoderBSet) return 1;
   }
 }
+
+int ParseRightEncoder(){
+  if(_RightEncoderAPrev && _RightEncoderBPrev){
+    if(!_RightEncoderASet && _RightEncoderBSet) return -1;
+    if(_RightEncoderASet && !_RightEncoderBSet) return 1;
+  }else if(!_RightEncoderAPrev && _RightEncoderBPrev){
+    if(!_RightEncoderASet && !_RightEncoderBSet) return -1;
+    if(_RightEncoderASet && _RightEncoderBSet) return 1;
+  }else if(!_RightEncoderAPrev && !_RightEncoderBPrev){
+    if(_RightEncoderASet && !_RightEncoderBSet) return -1;
+    if(!_RightEncoderASet && _RightEncoderBSet) return 1;
+  }else if(_RightEncoderAPrev && !_RightEncoderBPrev){
+    if(_RightEncoderASet && _RightEncoderBSet) return -1;
+    if(!_RightEncoderASet && !_RightEncoderBSet) return 1;
+  }
+}
+
+
