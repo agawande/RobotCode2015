@@ -10,15 +10,6 @@ const int IN4 = 3;
 const int ENA = 4;
 const int ENB = 5;
 
-int knobA = A1;    // select the input pin for the potentiometer
-int knobB = A2;
-int knobC = A3;
-int ledPin = 13;      // select the pin for the LED
-
-double Kp = 0;  // variable to store the value coming from the sensor
-double Ki = 0;
-double Kd = 0;
-
 // Setting up the MotorControl object with the proper pins.
 Motor rightMotor(ENA,IN1,IN2);
 Motor leftMotor(ENB,IN3,IN4);
@@ -60,9 +51,9 @@ void setup()
  Setpoint = 0;
  Input = _LeftEncoderTicks - _RightEncoderTicks;
  //turn the PID on
-  //myPID.SetOutputLimits(-65, 65);
+  myPID.SetOutputLimits(-255, 255);
   myPID.SetMode(AUTOMATIC);
-  myPID.SetSampleTime(5);
+  myPID.SetSampleTime(1);
   
   // Left encoder
   pinMode(c_LeftEncoderPinA, INPUT);      // sets pin A as input
@@ -81,7 +72,7 @@ void setup()
   attachInterrupt(c_RightEncoderPinB, HandleRightMotorInterruptB, CHANGE);
   
   //Start driving left motor, PID in the loop will make sure that the right motor follows it
-  leftMotor.signedDrive(64);
+  leftMotor.signedDrive(125);
 }
 
 long positionLeft  = 0;
@@ -89,16 +80,6 @@ long positionRight = 0;
 
 void loop()
 {  
- Kp = analogRead(knobA);
- Ki = analogRead(knobB);
- Kd = analogRead(knobC);
- Kp = map(Kp, 0, 1023, 0.01, 5);
- Ki = map(Ki, 0, 1023, 0.01, 5);
- Kd = map(Kd, 0, 1023, 0.01, 5);
- Serial.println('knobA ' + Kp);
- Serial.println('knobB ' + Ki);
- Serial.println('knobC ' + Kd);
- myPID.SetTunings(Kp, Ki, Kd);
   if (_LeftEncoderTicks != _RightEncoderTicks) {
     // If the right motor has moved
         Input = _LeftEncoderTicks - _RightEncoderTicks;
@@ -117,13 +98,8 @@ void loop()
         Serial.print("  R Revolutions: ");
         Serial.print(_RightEncoderTicks/8400.0);	// how to count: 64 counts/rev (PDR) * 131.25:1 (gear ratio) = 8400
         Serial.print("\n");*/
-    if(_LeftEncoderTicks > 2*11218){
-      leftMotor.signedDrive(0);
-      rightMotor.signedDrive(0);
-      _LeftEncoderTicks = 0;
-      _RightEncoderTicks = 0;
-    }
   }
+  
 }
 
 // Interrupt service routines for the left motor's quadrature encoder
