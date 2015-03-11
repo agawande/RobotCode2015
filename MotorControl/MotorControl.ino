@@ -1,8 +1,17 @@
+/*
+	MotorControl.ino is a bare motor control template. See the other three sketches for examples of use.
+*/
+
 #include "Motor_Control.h"
 #include "PID_v1.h"
 #include <Encoder.h>
 
-// Pin Definitions
+// Variable for maximum speed of robot. This is a PWM value (0-255). This can be used in different ways, but typically
+	// this is used to set the limitations of the PID's output. It can also be used to set other limits that the PID 
+	// tries to match (go_straight.ino does this).
+#define maxSpeed 128
+
+// Motor Pin Definitions
 const int IN1 = 0;
 const int IN2 = 1;
 const int IN3 = 2;
@@ -10,27 +19,23 @@ const int IN4 = 3;
 const int ENA = 4;
 const int ENB = 5;
 
-int knobA = A1;    // select the input pin for the potentiometer
-int knobB = A2;
-int knobC = A3;
-int ledPin = 13;      // select the pin for the LED
+// PID Parameter Input Definitions
+int knobKp = A1;
+int knobKi = A2;
+int knobKd = A3;
 
-double Kp = 0;  // variable to store the value coming from the sensor
-double Ki = 0;
-double Kd = 0;
+// PID values
+double Kp = 0.1;
+double Ki = 0.1;
+double Kd = 0.1;
 
-// Setting up the MotorControl object with the proper pins.
-Motor rightMotor(ENA,IN1,IN2);
-Motor leftMotor(ENB,IN3,IN4);
-
-//----------------For-PID--------------------
-
+// Quadrature Feedback Pin Definitions
 #define c_LeftEncoderPinA 7
 #define c_LeftEncoderPinB 8
-
 #define c_RightEncoderPinA 9
 #define c_RightEncoderPinB 10
 
+// Initializing Quadrature Feedback Variables.
 volatile bool _LeftEncoderASet;
 volatile bool _LeftEncoderBSet;
 volatile bool _LeftEncoderAPrev;
@@ -43,163 +48,216 @@ volatile bool _RightEncoderAPrev;
 volatile bool _RightEncoderBPrev;
 volatile long _RightEncoderTicks = 0;
 
-//Define Variables we'll be connecting to
-double Setpoint, Input, Output;
+long positionLeft = 0;
+long positionRight = 0;
+
+// Setting up the MotorControl objects with the proper pins.
+Motor rightMotor(ENA,IN1,IN2);
+Motor leftMotor(ENB,IN3,IN4);
+
+// Define Variables we'll be connecting PID to
 double SetpointL, InputL, OutputL;
 double SetpointR, InputR, OutputR;
 
-//Specify the links and initial tuning parameters
-PID myPID(&Input, &Output, &Setpoint,0.5,0.5,0.5, DIRECT);
+// Specify the links and initial tuning parameters
+//		DIRECT means an increase here should increase our output. REVERSE means an increase here decreases our output.
+PID leftPID(&InputL, &OutputL, &SetpointL, Kp, Ki, Kd, DIRECT);
+PID rightPID(&InputR, &OutputR, &SetpointL, Kp, Ki, Kd, DIRECT);
 
-//------------------------------------PID------------------------------------------
+// Our signed drive algorithm allows negative PWM values, which are treated as reverse driving.
+	// For this reason, our minimum is less than 0. We allow the motor to reverse to correct overshooting.
+rightPID.SetOutputLimits(-maxSpeed,maxSpeed);
+leftPID.SetOutputLimits(-maxSpeed,maxSpeed);
 
 void setup()
 {
- Serial.begin(9600);
- Serial.println("Motor Test");     // Ready statement.
- Setpoint = 0;
- Input = _LeftEncoderTicks - _RightEncoderTicks;
- //turn the PID on
-  //myPID.SetOutputLimits(-65, 65);
-  myPID.SetMode(AUTOMATIC);
-  myPID.SetSampleTime(5);
-  
-  // Left encoder
-  pinMode(c_LeftEncoderPinA, INPUT);      // sets pin A as input
-  digitalWrite(c_LeftEncoderPinA, LOW);  // turn on pullup resistors
-  pinMode(c_LeftEncoderPinB, INPUT);      // sets pin B as input
-  digitalWrite(c_LeftEncoderPinB, LOW);  // turn on pullup resistors
-  attachInterrupt(c_LeftEncoderPinA, HandleLeftMotorInterruptA, CHANGE);
-  attachInterrupt(c_LeftEncoderPinB, HandleLeftMotorInterruptB, CHANGE);
-  
-  // Right encoder
-  pinMode(c_RightEncoderPinA, INPUT);      // sets pin A as input
-  digitalWrite(c_RightEncoderPinA, LOW);  // turn on pullup resistors
-  pinMode(c_RightEncoderPinB, INPUT);      // sets pin B as input
-  digitalWrite(c_RightEncoderPinB, LOW);  // turn on pullup resistors
-  attachInterrupt(c_RightEncoderPinA, HandleRightMotorInterruptA, CHANGE);
-  attachInterrupt(c_RightEncoderPinB, HandleRightMotorInterruptB, CHANGE);
-  
-  //Start driving left motor, PID in the loop will make sure that the right motor follows it
-  leftMotor.signedDrive(64);
-}
+	// Open serial communications
+	Serial.begin(9600);
+	
+	// Left encoder setup
+	pinMode(c_LeftEncoderPinA, INPUT);			// set pins A and B as input
+	pinMode(c_LeftEncoderPinB, INPUT);
+	digitalWrite(c_LeftEncoderPinA, LOW);	 	// turn on pullup resistors
+	digitalWrite(c_LeftEncoderPinB, LOW);
+	
+	// Right encoder setup
+	pinMode(c_RightEncoderPinA, INPUT);			// set pins A and B as input
+	pinMode(c_RightEncoderPinB, INPUT);
+	digitalWrite(c_RightEncoderPinA, LOW);		// turn on pullup resistors
+	digitalWrite(c_RightEncoderPinB, LOW);
+	
+	// Attach interrupts to the encoder pins.
+	// This code is for Teensy 3.x systems. A different format will be used for other controllers
+	attachInterrupt(c_LeftEncoderPinA, HandleLeftMotorInterruptA, CHANGE);
+	attachInterrupt(c_LeftEncoderPinB, HandleLeftMotorInterruptB, CHANGE);
+	attachInterrupt(c_RightEncoderPinA, HandleRightMotorInterruptA, CHANGE);
+	attachInterrupt(c_RightEncoderPinB, HandleRightMotorInterruptB, CHANGE);
+	
+	// Generally, you want to aim for a difference of 0. Drive the motors until the difference from where you want to be and where you are is 0.
+	SetpointL = 0;
+	SetpointR = 0;
+	
+	// Decide how your input will be calculated. PID will try to tweak your output until this meets your Setpoint, and then hold it there.
+	InputL = _LeftEncoderTicks - _RightEncoderTicks;
+	InputR = _LeftEncoderTicks - _RightEncoderTicks;
 
-long positionLeft  = 0;
-long positionRight = 0;
+	// We recalculate PID every millisecond, since this is very prone to rapid changes.
+	leftPID.SetSampleTime(1);
+	rightPID.SetSampleTime(1);
+	
+	// This turns the PID on
+	leftPID.SetMode(AUTOMATIC);
+	rightPID.SetMode(AUTOMATIC);
+}
 
 void loop()
-{  
- Kp = analogRead(knobA);
- Ki = analogRead(knobB);
- Kd = analogRead(knobC);
- Kp = map(Kp, 0, 1023, 0.01, 5);
- Ki = map(Ki, 0, 1023, 0.01, 5);
- Kd = map(Kd, 0, 1023, 0.01, 5);
- Serial.println('knobA ' + Kp);
- Serial.println('knobB ' + Ki);
- Serial.println('knobC ' + Kd);
- myPID.SetTunings(Kp, Ki, Kd);
-  if (_LeftEncoderTicks != _RightEncoderTicks) {
-    // If the right motor has moved
-        Input = _LeftEncoderTicks - _RightEncoderTicks;
-	myPID.Compute();
-        Serial.print("Output: ");
-        Serial.println((int) Output);
-        rightMotor.signedDrive((int) Output);
-	//rightMotor.analogDrive(Output);
-        /*Serial.print(" L Encoder Ticks: ");
-        Serial.print(_LeftEncoderTicks);
-        Serial.print("  L Revolutions: ");
-        Serial.print(_LeftEncoderTicks/8400.0);		// how to count: 64 counts/rev (PDR) * 131.25:1 (gear ratio) = 8400
-      
-        Serial.print("  R Encoder Ticks: ");
-        Serial.print(_RightEncoderTicks);
-        Serial.print("  R Revolutions: ");
-        Serial.print(_RightEncoderTicks/8400.0);	// how to count: 64 counts/rev (PDR) * 131.25:1 (gear ratio) = 8400
-        Serial.print("\n");*/
-    if(_LeftEncoderTicks > 2*11218){
-      leftMotor.signedDrive(0);
-      rightMotor.signedDrive(0);
-      _LeftEncoderTicks = 0;
-      _RightEncoderTicks = 0;
-    }
-  }
+{	
+	// Fetch PID constants from our potentiometers
+	FetchPIDConstants();
+	
+	// Next, handle motor stuff. This is done by recalculating inputs, then running the Compute method.
+	InputL = _RightEncoderTicks - LeftEncoderTicks;
+	InputR = _LeftEncoderTicks - _RightEncoderTicks;
+	
+	leftPID.Compute();
+	rightPID.Compute();
+	
+	// Then you drive the motors using the outputs.
+	leftMotor.signedDrive((int)OutputL);
+	rightMotor.signedDrive((int)OutputR);
+	
+	// If you want to see the motor tick information live, uncomment this block.
+		// Be warned, this sends lots of data very quickly over serial, and can easily overwhelm the Arduino IDE.
+	/*
+		Serial.print(" L Encoder Ticks: ");
+		Serial.print(_LeftEncoderTicks);
+		Serial.print("	L Revolutions: ");
+		Serial.print(_LeftEncoderTicks/8400.0);		// how to count: 64 counts/rev (PDR) * 131.25:1 (gear ratio) = 8400
+		
+		Serial.print("	R Encoder Ticks: ");
+		Serial.print(_RightEncoderTicks);
+		Serial.print("	R Revolutions: ");
+		Serial.print(_RightEncoderTicks/8400.0);	// how to count: 64 counts/rev (PDR) * 131.25:1 (gear ratio) = 8400
+		Serial.print("\n");
+	*/
+	
 }
 
-// Interrupt service routines for the left motor's quadrature encoder
+void FetchPIDConstants() {
+	// Note the old values.
+	double oldKp = Kp;
+	double oldKi = Ki;
+	double oldKd = Kd;
+	
+	// Read our knob values
+	Kp = analogRead(knobKp);
+	Ki = analogRead(knobKi);
+	Kd = analogRead(knobKd);
+	
+	// Map these to actual PID constants.
+	Kp = map(Kp, 0, 1023, 0.01, 5);
+	Ki = map(Ki, 0, 1023, 0.01, 5);
+	Kd = map(Kd, 0, 1023, 0.01, 5);
+	
+	// Alter the tunings.
+	leftPID.SetTunings(Kp, Ki, Kd);
+	rightPID.SetTunings(Kp, Ki, Kd);
+	
+	// Show the current P, I, and D constants only if they're changed from the old ones.
+	if ((oldKp != Kp) || (oldKi != Ki) || (oldKd != Kd)) {
+		Serial.println('Kp: ' + Kp + ' ');
+		Serial.println('Ki: ' + Ki + ' ');
+		Serial.println('Kd: ' + Kd);
+		Serial.println('\n');
+	}
+}
+
 void HandleLeftMotorInterruptA(){
-  _LeftEncoderBSet = digitalRead(c_LeftEncoderPinB);
-  _LeftEncoderASet = digitalRead(c_LeftEncoderPinA);
-  
-  _LeftEncoderTicks+=ParseLeftEncoder();
-  
-  _LeftEncoderAPrev = _LeftEncoderASet;
-  _LeftEncoderBPrev = _LeftEncoderBSet;
+	// Handle the left motor's A interrupt.
+	
+	// Fetch both pins' states.
+	_LeftEncoderBSet = digitalRead(c_LeftEncoderPinB);
+	_LeftEncoderASet = digitalRead(c_LeftEncoderPinA);
+	
+	// Increment this by 1 or -1 based on how the state parses.
+	_LeftEncoderTicks+=ParseLeftEncoder();
+	
+	// Set the old values to these ones.
+	_LeftEncoderAPrev = _LeftEncoderASet;
+	_LeftEncoderBPrev = _LeftEncoderBSet;
 }
 
 void HandleLeftMotorInterruptB(){
-  // Test transition;
-  _LeftEncoderBSet = digitalRead(c_LeftEncoderPinB);
-  _LeftEncoderASet = digitalRead(c_LeftEncoderPinA);
-  
-  _LeftEncoderTicks+=ParseLeftEncoder();
-  
-  _LeftEncoderAPrev = _LeftEncoderASet;
-  _LeftEncoderBPrev = _LeftEncoderBSet;
+	// Handle the Left motor's B interrupt.
+	// This works the same as the A interrupt.
+	
+	_LeftEncoderBSet = digitalRead(c_LeftEncoderPinB);
+	_LeftEncoderASet = digitalRead(c_LeftEncoderPinA);
+	
+	_LeftEncoderTicks+=ParseLeftEncoder();
+	
+	_LeftEncoderAPrev = _LeftEncoderASet;
+	_LeftEncoderBPrev = _LeftEncoderBSet;
 }
 
-// Interrupt service routines for the Right motor's quadrature encoder
 void HandleRightMotorInterruptA(){
-  _RightEncoderBSet = digitalRead(c_RightEncoderPinB);
-  _RightEncoderASet = digitalRead(c_RightEncoderPinA);
-  
-  _RightEncoderTicks+=ParseRightEncoder();
-  
-  _RightEncoderAPrev = _RightEncoderASet;
-  _RightEncoderBPrev = _RightEncoderBSet;
+	// The right motor interrupts also work in the same manner.
+	_RightEncoderBSet = digitalRead(c_RightEncoderPinB);
+	_RightEncoderASet = digitalRead(c_RightEncoderPinA);
+	
+	_RightEncoderTicks+=ParseRightEncoder();
+	
+	_RightEncoderAPrev = _RightEncoderASet;
+	_RightEncoderBPrev = _RightEncoderBSet;
 }
 
 void HandleRightMotorInterruptB(){
-  // Test transition;
-  _RightEncoderBSet = digitalRead(c_RightEncoderPinB);
-  _RightEncoderASet = digitalRead(c_RightEncoderPinA);
-  
-  _RightEncoderTicks+=ParseRightEncoder();
-  
-  _RightEncoderAPrev = _RightEncoderASet;
-  _RightEncoderBPrev = _RightEncoderBSet;
+	// More of the same here.
+	_RightEncoderBSet = digitalRead(c_RightEncoderPinB);
+	_RightEncoderASet = digitalRead(c_RightEncoderPinA);
+	
+	_RightEncoderTicks+=ParseRightEncoder();
+	
+	_RightEncoderAPrev = _RightEncoderASet;
+	_RightEncoderBPrev = _RightEncoderBSet;
 }
 
 int ParseLeftEncoder(){
-  if(_LeftEncoderAPrev && _LeftEncoderBPrev){
-    if(!_LeftEncoderASet && _LeftEncoderBSet) return -1;
-    if(_LeftEncoderASet && !_LeftEncoderBSet) return 1;
-  }else if(!_LeftEncoderAPrev && _LeftEncoderBPrev){
-    if(!_LeftEncoderASet && !_LeftEncoderBSet) return -1;
-    if(_LeftEncoderASet && _LeftEncoderBSet) return 1;
-  }else if(!_LeftEncoderAPrev && !_LeftEncoderBPrev){
-    if(_LeftEncoderASet && !_LeftEncoderBSet) return -1;
-    if(!_LeftEncoderASet && _LeftEncoderBSet) return 1;
-  }else if(_LeftEncoderAPrev && !_LeftEncoderBPrev){
-    if(_LeftEncoderASet && _LeftEncoderBSet) return -1;
-    if(!_LeftEncoderASet && !_LeftEncoderBSet) return 1;
-  }
+	// The left encoder is parsed with some binary magic.
+	// For more information about how this works, look into quadrature encoder mechanics.
+	// If you find that your values are increasing when they should decrease, swap all -1's for 1s and vice versa.
+	
+	if(_LeftEncoderAPrev && _LeftEncoderBPrev){
+		if(!_LeftEncoderASet && _LeftEncoderBSet) return 1;
+		if(_LeftEncoderASet && !_LeftEncoderBSet) return -1;
+	}else if(!_LeftEncoderAPrev && _LeftEncoderBPrev){
+		if(!_LeftEncoderASet && !_LeftEncoderBSet) return 1;
+		if(_LeftEncoderASet && _LeftEncoderBSet) return -1;
+	}else if(!_LeftEncoderAPrev && !_LeftEncoderBPrev){
+		if(_LeftEncoderASet && !_LeftEncoderBSet) return 1;
+		if(!_LeftEncoderASet && _LeftEncoderBSet) return -1;
+	}else if(_LeftEncoderAPrev && !_LeftEncoderBPrev){
+		if(_LeftEncoderASet && _LeftEncoderBSet) return 1;
+		if(!_LeftEncoderASet && !_LeftEncoderBSet) return -1;
+	}
 }
 
 int ParseRightEncoder(){
-  if(_RightEncoderAPrev && _RightEncoderBPrev){
-    if(!_RightEncoderASet && _RightEncoderBSet) return -1;
-    if(_RightEncoderASet && !_RightEncoderBSet) return 1;
-  }else if(!_RightEncoderAPrev && _RightEncoderBPrev){
-    if(!_RightEncoderASet && !_RightEncoderBSet) return -1;
-    if(_RightEncoderASet && _RightEncoderBSet) return 1;
-  }else if(!_RightEncoderAPrev && !_RightEncoderBPrev){
-    if(_RightEncoderASet && !_RightEncoderBSet) return -1;
-    if(!_RightEncoderASet && _RightEncoderBSet) return 1;
-  }else if(_RightEncoderAPrev && !_RightEncoderBPrev){
-    if(_RightEncoderASet && _RightEncoderBSet) return -1;
-    if(!_RightEncoderASet && !_RightEncoderBSet) return 1;
-  }
+	// The left encoder is parsed with some binary magic.
+	// For more information about how this works, look into quadrature encoder mechanics.
+	// If you find that your values are increasing when they should decrease, swap all -1's for 1s and vice versa.
+	
+	if(_RightEncoderAPrev && _RightEncoderBPrev){
+		if(!_RightEncoderASet && _RightEncoderBSet) return 1;
+		if(_RightEncoderASet && !_RightEncoderBSet) return -1;
+	}else if(!_RightEncoderAPrev && _RightEncoderBPrev){
+		if(!_RightEncoderASet && !_RightEncoderBSet) return 1;
+		if(_RightEncoderASet && _RightEncoderBSet) return -1;
+	}else if(!_RightEncoderAPrev && !_RightEncoderBPrev){
+		if(_RightEncoderASet && !_RightEncoderBSet) return 1;
+		if(!_RightEncoderASet && _RightEncoderBSet) return -1;
+	}else if(_RightEncoderAPrev && !_RightEncoderBPrev){
+		if(_RightEncoderASet && _RightEncoderBSet) return 1;
+		if(!_RightEncoderASet && !_RightEncoderBSet) return -1;
+	}
 }
-
-

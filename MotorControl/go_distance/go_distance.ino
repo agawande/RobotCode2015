@@ -1,9 +1,9 @@
 /*
-	go_straight.ino is a sketch that drives both motors forward while trying to keep the robot perfectly straight
+	go_distance.ino is a sketch that drives both motors forward a set distance.
 	using PID and Quadrature Feedback.
 	
-	Specifically, it drives one motor at a constant speed, and makes the other motor match it by trying to equalize
-	the number of gear ticks from quadrature feedback.
+	Specifically, it drives both motors using PID until the difference between where they
+	were and where they want to be is 0.
 */
 
 #include "Motor_Control.h"
@@ -12,6 +12,9 @@
 
 // Variable for maximum speed of robot. This is a PWM value (0-255)
 #define maxSpeed 64
+
+// The number of ticks of distance we want to go.
+#define distanceTicks 11218
 
 // Motor Pin Definitions
 const int IN1 = 0;
@@ -67,8 +70,8 @@ PID leftPID(&InputL, &OutputL, &SetpointL, Kp, Ki, Kd, DIRECT);
 PID rightPID(&InputR, &OutputR, &SetpointL, Kp, Ki, Kd, DIRECT);
 
 // Our signed drive algorithm allows negative PWM values, which are treated as reverse driving.
-rightPID.SetOutputLimits(-255,255);
-leftPID.SetOutputLimits(-255,255);
+rightPID.SetOutputLimits(-maxSpeed,maxSpeed);
+leftPID.SetOutputLimits(-maxSpeed,maxSpeed);
 
 void setup()
 {
@@ -96,30 +99,37 @@ void setup()
 	
 	// This sketch works by driving the left motor at a constant speed, and making the right motor match it at all times.
 	// To do this, we aim for a difference of 0 ticks.
+	SetpointL = 0;
 	SetpointR = 0;
 	
 	// Since the left encoder will be driven constantly, we expect it to usually be ahead of the right motor.
 	// This is why the left ticks are first here.
-	InputR = _LeftEncoderTicks - _RightEncoderTicks;
+	InputL = _LeftEncoderTicks - distanceTicks;
+	InputR = _RightEncoderTicks - distanceTicks;
 
 	// We recalculate PID every millisecond, since this is very prone to rapid changes.
+	leftPID.SetSampleTime(1);
 	rightPID.SetSampleTime(1);
 	
 	//turn the PID on
+	leftPID.SetMode(AUTOMATIC);
 	rightPID.SetMode(AUTOMATIC);
-	
-	//Start driving left motor, PID in the loop will make sure that the right motor follows it
-	leftMotor.signedDrive(maxSpeed);
 }
 
 void loop()
 {	
 	FetchPIDConstants();
 	
-	// Next, handle motor stuff.
-	InputR = _LeftEncoderTicks - _RightEncoderTicks;
+	// Recalculate our inputs
+	InputL = _LeftEncoderTicks - distanceTicks;
+	InputR = _RightEncoderTicks - distanceTicks;
+	
+	// Compute PID
+	leftPID.Compute();
 	rightPID.Compute();
 	
+	// Drive the motors
+	leftMotor.signedDrive((int)OutputL);
 	rightMotor.signedDrive((int)OutputR);
 	
 	/*
