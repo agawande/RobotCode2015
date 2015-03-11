@@ -14,6 +14,7 @@ class Motor
       void setReverse();
       
       // Halt all motor movement immediately.
+	  // A Halt removes directionality, so you'll need to select the direction again after, or use signedDrive.
       void halt();
       
       // Drive the motor using PWM. 0-255.
