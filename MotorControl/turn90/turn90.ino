@@ -72,10 +72,6 @@ double SetpointR, InputR, OutputR;
 PID leftPID(&InputL, &OutputL, &SetpointL, Kp, Ki, Kd, DIRECT);
 PID rightPID(&InputR, &OutputR, &SetpointL, Kp, Ki, Kd, DIRECT);
 
-// Our signed drive algorithm allows negative PWM values, which are treated as reverse driving.
-rightPID.SetOutputLimits(-maxSpeed,maxSpeed);
-leftPID.SetOutputLimits(-maxSpeed,maxSpeed);
-
 void setup()
 {
 	// Open serial communications
@@ -99,6 +95,10 @@ void setup()
 	attachInterrupt(c_LeftEncoderPinB, HandleLeftMotorInterruptB, CHANGE);
 	attachInterrupt(c_RightEncoderPinA, HandleRightMotorInterruptA, CHANGE);
 	attachInterrupt(c_RightEncoderPinB, HandleRightMotorInterruptB, CHANGE);
+
+        // Our signed drive algorithm allows negative PWM values, which are treated as reverse driving.
+        rightPID.SetOutputLimits(-maxSpeed,maxSpeed);
+        leftPID.SetOutputLimits(-maxSpeed,maxSpeed);
 	
 	// This sketch works by driving both motors with the goal of making the difference between the number of ticks and the goal number of ticks 0.
 	SetpointL = 0;
