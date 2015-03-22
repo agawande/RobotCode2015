@@ -11,13 +11,13 @@
 #include <Encoder.h>
 
 // Variable for maximum speed of robot. This is a PWM value (0-255)
-#define maxSpeed 64
+double maxSpeed = 64;
 
 // Variable defining number of ticks for a 90 degree turn needed from each motor.
-#define turnTicks 5500
+int turnTicks = 5500;
 
 // Define the direction of the turn
-bool turnLeft = TRUE;
+bool turnLeft = true;
 
 // Motor Pin Definitions
 const int IN1 = 0;
@@ -141,8 +141,8 @@ void loop()
 	rightPID.Compute();
 	
 	// Drive the motors.
-	LeftMotor.signedDrive((int)OutputL);
-	RightMotor.signedDrive((int)OutputR);
+	leftMotor.signedDrive((int)OutputL);
+	rightMotor.signedDrive((int)OutputR);
 	
 }
 
