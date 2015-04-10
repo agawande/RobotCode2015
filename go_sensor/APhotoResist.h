@@ -6,8 +6,8 @@
 class APhotoResist
 {
 	public:
-		APhotoResist(int readPin);
-		void fetchValue();
+		APhotoResist(int pin);
+		int fetchValue();
 	
 	private:
 		int _pin;

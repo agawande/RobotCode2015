@@ -6,12 +6,12 @@
 #include "Arduino.h"
 #include "AphotoResist.h"
 
-AphotoResist::AphotoResist(int pin)
+APhotoResist::APhotoResist(int pin)
 {
 	_pin = pin;
 }
 
-void AphotoResist::fetchValue()
+int APhotoResist::fetchValue()
 {
-	
+  return analogRead(_pin);
 }

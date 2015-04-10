@@ -63,15 +63,23 @@ double SetpointR, InputR, OutputR;
 
 //Specify the links and initial tuning parameters
 // DIRECT means an increase here should increase our output. REVERSE means an increase here decreases our output.
-PID leftPID(&InputL, &OutputL, &SetpointL, Kp, Ki, Kd, DIRECT);
-PID rightPID(&InputR, &OutputR, &SetpointL, Kp, Ki, Kd, DIRECT);
+//PID leftPID(&InputL, &OutputL, &SetpointL, Kp, Ki, Kd, REVERSE);
+PID rightPID(&InputR, &OutputR, &SetpointL, Kp, Ki, Kd, REVERSE);
 
 // Our signed drive algorithm allows negative PWM values, which are treated as reverse driving.
-rightPID.SetOutputLimits(-255,255);
-leftPID.SetOutputLimits(-255,255);
+//rightPID.SetOutputLimits(-255,255);
+//leftPID.SetOutputLimits(-255,255);
+
+//Line following
+int frontLeft = A1; //connected to analog 0
+int frontMid = A2;
+int frontRight = A3;
+int colorChange = 700;
+int fLeftVal, fRightVal, fMidVal;
 
 void setup()
 {
+        rightPID.SetOutputLimits(-255,255);
 	// Open serial communications
 	Serial.begin(9600);
 	
@@ -114,14 +122,44 @@ void setup()
 
 void loop()
 {	
-	FetchPIDConstants();
-	
+        fLeftVal = analogRead(frontLeft);
+        fMidVal = analogRead(frontMid);
+        fRightVal = analogRead(frontRight);  
+        Serial.print("left: "+String(fLeftVal)+"  "+check_color(fLeftVal)+"  ");
+        Serial.print("mid "+String(fMidVal)+"  "+check_color(fMidVal)+"  ");
+        Serial.println("right "+String(fRightVal)+"  "+check_color(fRightVal)+"  ");
+        
+        
+        FetchPIDConstants();
 	// Next, handle motor stuff.
-	InputR = _LeftEncoderTicks - _RightEncoderTicks;
+        InputR = _LeftEncoderTicks - _RightEncoderTicks;
 	rightPID.Compute();
 	
-	rightMotor.signedDrive((int)OutputR);
-	
+        rightMotor.signedDrive((int)OutputR);
+        
+        //If left!=black & right!=black & middle !=white
+        if(check_color(fLeftVal)==false&&check_color(fMidVal)==true&&check_color(fRightVal)==false){
+          //go straight
+        }
+        else if(check_color(fLeftVal)==true&&check_color(fMidVal)==true&&check_color(fRightVal)==false){
+          //turn left (nudge)
+        }
+        else if(check_color(fLeftVal)==false&&check_color(fMidVal)==true&&check_color(fRightVal)==true){
+          //turn right(nudge)
+        }
+        else if(check_color(fLeftVal)==true&&check_color(fMidVal)==false&&check_color(fRightVal)==false){
+          //extreme version of turn left 
+        }
+        else if(check_color(fLeftVal)==false&&check_color(fMidVal)==false&&check_color(fRightVal)==true){
+          //extreme version of turn right
+        }
+        else if(check_color(fLeftVal)==false&&check_color(fMidVal)==false&&check_color(fRightVal)==false){
+          // sweep 
+        }
+        else{
+          leftMotor.halt();
+        }
+
 	/*
 		Serial.print(" L Encoder Ticks: ");
 		Serial.print(_LeftEncoderTicks);
@@ -154,7 +192,6 @@ void FetchPIDConstants() {
 	Kd = map(Kd, 0, 1023, 0.01, 5);
 	
 	// Alter the tunings.
-	leftPID.SetTunings(Kp, Ki, Kd);
 	rightPID.SetTunings(Kp, Ki, Kd);
 	
 	// Show the current P, I, and D constants only if they're changed from the old ones.
@@ -254,4 +291,13 @@ int ParseRightEncoder(){
 		if(_RightEncoderASet && _RightEncoderBSet) return 1;
 		if(!_RightEncoderASet && !_RightEncoderBSet) return -1;
 	}
+}
+
+boolean check_color(int fLeftVal){
+  if(fLeftVal>colorChange){
+    return false;   //black
+  }
+  else{
+    return true;  //white
+  }
 }

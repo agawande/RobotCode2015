@@ -58,7 +58,7 @@ void Motor::signedDrive(int amt) {
   // signedDrive handles directionality on its own and will set the direction of the motor according to the sign.
   // Old direction will be retained on speed of 0.
   
-  if (amt > 0) {
+  if (amt >= 0) {
     this->setForward();
   } 
   else if (amt < 0) {
